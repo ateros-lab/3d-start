@@ -1,0 +1,181 @@
+<body>
+  <p>TAP TO START</p>
+  <canvas></canvas>
+  <style>
+    body {
+      margin: 0;
+    }
+    canvas {
+      width: 100vw;
+      height: 100vh;
+    }
+    p {
+      position: absolute;
+      left: 0;
+      top: 25vh;
+      width: 100vw;
+      text-align: center;
+      color: rgb(255, 254, 187);
+      text-shadow: 0px 0px 5px #3b3b3b;
+      font-size: 5vh;
+      font-family: Arial;
+    }
+  </style>
+  <script type="module">
+    import {createWorld, loadAsset, getVector, moveMesh, locateMesh,
+      getRandom, getColor, createBox, addTwoSideLineElement} from './engine.js';
+
+    // Создание мира и загрузка ассетов
+    let canvas = window.document.querySelector('canvas');
+    let text = window.document.querySelector('p');
+    let scene = await createWorld(canvas, true);
+    let platform = await loadAsset('platform.glb');
+    locateMesh(platform, getVector(0, 0, -100));
+    let player = await loadAsset('car.glb', {
+      size: getVector(5, 3, 5),
+      visibility: false
+    });
+    let sandMeshTypes = [];
+    for(let i = 0; i < 3; i++){
+      sandMeshTypes.push(await loadAsset(`sand${i+1}.glb`));
+      locateMesh(sandMeshTypes[i], getVector(0, 0, -100));
+    }
+    let outMeshTypes = [];
+    for(let i = 0; i < 7; i++){
+      outMeshTypes.push(await loadAsset(`outElement${i+1}.glb`));
+      locateMesh(outMeshTypes[i], getVector(0, 0, -100));
+    }
+    // ПЕРЕМЕННЫЕ
+    let isAssetsLoaded = true;
+    let isGameStarted = false;
+    let platformArray = [];
+    let delta = 0;
+    let speed = 500;
+    let playerPositionX = 2.5;
+    let sandArray = [];
+    let sandSide = 1;
+    let outArray = [];
+    let outElementSide = 1;
+    let gameover = false;
+    let boxArray = [];
+    let score = 0;
+    let bestScore = (window.localStorage.getItem('score'))
+      ? window.localStorage.getItem('score')
+      : 0;
+    // ФУНКЦИИ
+    const saveScore = (value) => {
+      window.localStorage.setItem('score', value);
+      bestScore = value;
+    }
+    const generateOutBlock = () => {
+      let sideVariable = addTwoSideLineElement(
+        outArray,
+        outMeshTypes,
+        outElementSide,
+        7,
+        getRandom(15, 20),
+        0,
+        false
+      );
+      outElementSide = sideVariable;
+    }
+    const generateSandBlock = () => {
+      let {sideVariable, endPosition} = addTwoSideLineElement(
+        sandArray,
+        sandMeshTypes,
+        sandSide,
+        3,
+        5,
+        10,
+        true
+      );
+      sandSide = sideVariable;
+      endPosition.x *= -1;
+      boxArray.push(createBox(
+        getVector(5, 5, 5),
+        endPosition,
+        0
+      ));
+    }
+    const generateRoadBlock = (positionZ) => {
+      let newPlatform = platform.clone();
+      locateMesh(newPlatform, getVector(0, 0, positionZ));
+      platformArray.push(newPlatform);
+    }
+    const replacePlatform = () => {
+      let firstPlatform = platformArray.shift();
+      firstPlatform.position.z = platformArray[platformArray.length - 1].position.z + 5;
+      platformArray.push(firstPlatform);
+    }
+    const moveMeshesArray = (array) => {
+      array.map(mesh => {
+        mesh.moveWithCollisions(getVector(0, 0, -5 * (scene.deltaTime/speed)))
+      });
+    }
+    const updateArray = (array, generateFunction) => {
+      let firstElement = array.shift();
+      firstElement.dispose();
+      generateFunction();
+    }
+    const update = () => {
+      // Проверка проигрыша, либо повышения счета
+      sandArray.map(sand => {
+        if(player.intersectsMesh(sand)){
+          gameover = true;
+          if(score > bestScore) saveScore(score);
+          text.innerText = `GAME OVER \n\n BEST: ${bestScore} \n\n NOW: ${score}`;
+        }
+      });
+      boxArray.map(box => {
+        if(player.intersectsMesh(box)){
+          box.dispose();
+          boxArray.shift();
+          score++;
+          text.innerText = score;
+        }
+      });
+      // Передвижение обьектов
+      if(gameover) return;
+      moveMeshesArray(platformArray);
+      moveMeshesArray(sandArray);
+      moveMeshesArray(outArray);
+      moveMeshesArray(boxArray);
+      // Генерация новых обьектов
+      delta += scene.deltaTime;
+      if(delta >= speed){
+        delta = 0;
+        if(sandArray[0].position.z <= -30) updateArray(sandArray, generateSandBlock);
+        if(outArray[0].position.z <= -10) updateArray(outArray, generateOutBlock);
+        replacePlatform();
+      }
+    }
+    // Вызов стартовых функций
+    for(let i = -5; i < 30; i++) generateRoadBlock(i*5);
+    for(let i = 0; i < 7; i++) generateSandBlock();
+    for(let i = 0; i < 7; i++) generateOutBlock();
+    // СОБЫТИЯ
+    scene.registerBeforeRender(() => {
+      if(isGameStarted) update();
+    });
+    const tapEventListener = (event) => {
+      if(isAssetsLoaded) {
+        isGameStarted = true;
+        text.innerText = score;
+      }
+      if(isGameStarted) {
+        if(gameover) window.location.reload();
+        else {
+          playerPositionX *= -1;
+          player.position.x = playerPositionX;
+        }
+      }
+    }
+    // ОБРАБОТЧИКИ СОБЫТИЙ
+    window.addEventListener('click', (event) => tapEventListener(event));
+    window.addEventListener('keyup', (event) => {
+      if(event.code === 'Space') {
+        tapEventListener();
+      }
+    })
+  </script>
+</body>
